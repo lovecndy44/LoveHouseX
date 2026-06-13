@@ -271,27 +271,27 @@
         }
 
         .locked-icon-wrapper {
-            width: 90px;
-            height: 90px;
+            width: 80px;
+            height: 80px;
             border-radius: 50%;
             background: rgba(255, 51, 102, 0.1);
             border: 2px dashed var(--primary);
             display: flex;
             align-items: center;
             justify-content: center;
-            margin-bottom: 24px;
+            margin-bottom: 20px;
             animation: pulse-border 2s infinite;
         }
 
         .locked-icon-wrapper i {
-            font-size: 36px;
+            font-size: 32px;
             color: var(--primary);
         }
 
         .locked-title {
-            font-size: 22px;
+            font-size: 20px;
             font-weight: 700;
-            margin-bottom: 12px;
+            margin-bottom: 10px;
             color: var(--text-light);
         }
 
@@ -299,7 +299,7 @@
             font-size: 13px;
             color: var(--text-muted);
             line-height: 1.6;
-            margin-bottom: 30px;
+            margin-bottom: 24px;
             max-width: 320px;
         }
 
@@ -341,6 +341,22 @@
             align-items: center;
             justify-content: center;
             gap: 8px;
+        }
+
+        .debug-console {
+            margin-top: 16px;
+            font-family: monospace;
+            font-size: 11px;
+            color: #ff9800;
+            background: rgba(0,0,0,0.4);
+            padding: 10px;
+            border-radius: 8px;
+            width: 100%;
+            max-width: 320px;
+            text-align: left;
+            word-break: break-all;
+            border: 1px solid rgba(255, 152, 0, 0.2);
+            display: none;
         }
 
         .pagination {
@@ -944,7 +960,7 @@
                 <i class="fas fa-lock"></i>
             </div>
             <div class="locked-title">Access Locked</div>
-            <div class="locked-desc">
+            <div class="locked-desc" id="locked-desc-text">
                 Subscription required. Please join our Private Telegram Channel to unlock the Mini App's exclusive content.
             </div>
             <div class="locked-btn-group">
@@ -956,6 +972,8 @@
                     <i class="fas fa-redo"></i> Verify Membership
                 </button>
             </div>
+            <!-- Live technical console log for diagnostic assistance -->
+            <div class="debug-console" id="debug-console"></div>
         </div>
 
         <div class="app-content-scroll" id="scroll-viewport">
@@ -1065,36 +1083,56 @@
 
         const lockedGate = document.getElementById('locked-gate');
         const verifySubBtn = document.getElementById('verify-sub-btn');
+        const debugConsole = document.getElementById('debug-console');
         
-        runGateVerification();
-        
+        function showDebug(msg) {
+            debugConsole.style.display = 'block';
+            debugConsole.innerHTML = `⚙️ <strong>Debug Info:</strong><br>${msg}`;
+        }
+
         async function runGateVerification() {
             const user = tg.initDataUnsafe?.user;
             if (!user || !user.id) {
-                // If loaded outside Telegram wrapper, enforce lock screen
                 lockedGate.style.display = 'flex';
+                showDebug("No active Telegram Session detected. Launch this App directly inside Telegram.");
                 return;
             }
 
             try {
                 const res = await fetch(`${WORKER_BACKEND}/api/check-subscription?user_id=${user.id}`);
+                
+                if (!res.ok) {
+                    const errData = await res.text();
+                    lockedGate.style.display = 'flex';
+                    showDebug(`Worker Error Response (${res.status}): ${errData}`);
+                    return;
+                }
+
                 const data = await res.json();
-                if (data.ok && data.subscribed) {
-                    isVerifiedUser = true;
-                    lockedGate.style.display = 'none';
-                    initApp();
+                
+                if (data.ok) {
+                    if (data.subscribed) {
+                        isVerifiedUser = true;
+                        lockedGate.style.display = 'none';
+                        initApp();
+                    } else {
+                        lockedGate.style.display = 'flex';
+                        showDebug(`Verification Fail. Status in channel: "${data.status || 'Not a member'}"`);
+                    }
                 } else {
                     lockedGate.style.display = 'flex';
+                    showDebug(`Telegram API Error: ${data.error || 'Request rejected.'}`);
                 }
             } catch (err) {
                 console.error("Verification connection error:", err);
                 lockedGate.style.display = 'flex';
+                showDebug(`Network Request Blocked. Ensure backend CORS configuration is deployed correctly. Details: ${err.message}`);
             }
         }
 
         verifySubBtn.addEventListener('click', async () => {
             verifySubBtn.disabled = true;
-            verifySubBtn.textContent = "Verifying...";
+            verifySubBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Checking...';
             await runGateVerification();
             verifySubBtn.disabled = false;
             verifySubBtn.innerHTML = '<i class="fas fa-redo"></i> Verify Membership';
