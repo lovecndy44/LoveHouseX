@@ -262,7 +262,7 @@
             bottom: 0;
             background: #07070A;
             z-index: 500;
-            display: none;
+            display: flex; /* Starts flex to prevent blank screens during verification */
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -356,7 +356,6 @@
             text-align: left;
             word-break: break-all;
             border: 1px solid rgba(255, 152, 0, 0.2);
-            display: none;
         }
 
         .pagination {
@@ -961,7 +960,7 @@
             </div>
             <div class="locked-title">Access Locked</div>
             <div class="locked-desc" id="locked-desc-text">
-                Subscription required. Please join our Private Telegram Channel to unlock the Mini App's exclusive content.
+                Checking channel subscription status. Please wait...
             </div>
             <div class="locked-btn-group">
                 <!-- Replace with your actual private channel invite link -->
@@ -973,7 +972,7 @@
                 </button>
             </div>
             <!-- Live technical console log for diagnostic assistance -->
-            <div class="debug-console" id="debug-console"></div>
+            <div class="debug-console" id="debug-console">Initialising system...</div>
         </div>
 
         <div class="app-content-scroll" id="scroll-viewport">
@@ -1039,10 +1038,8 @@
     <script src="content.js"></script>
     <script>
         const tg = window.Telegram.WebApp;
-        tg.expand();
-        tg.ready();
         
-        const WORKER_BACKEND = "https://videoconer.samisaiyan331.workers.dev"; // Set to your live Backend Worker URL
+        const WORKER_BACKEND = "https://videoconer.samisaiyan331.workers.dev"; // Live Backend Worker URL
 
         let currentPage = 1;
         let currentView = 'home';
@@ -1084,19 +1081,31 @@
         const lockedGate = document.getElementById('locked-gate');
         const verifySubBtn = document.getElementById('verify-sub-btn');
         const debugConsole = document.getElementById('debug-console');
+        const lockedDescText = document.getElementById('locked-desc-text');
         
         function showDebug(msg) {
             debugConsole.style.display = 'block';
-            debugConsole.innerHTML = `⚙️ <strong>Debug Info:</strong><br>${msg}`;
+            debugConsole.innerHTML = `⚙️ <strong>System Status:</strong><br>${msg}`;
         }
 
         async function runGateVerification() {
+            // Signal Telegram SDK setup
+            try {
+                tg.ready();
+                tg.expand();
+            } catch(e) {
+                console.log("Telegram expansion bypassed.");
+            }
+
             const user = tg.initDataUnsafe?.user;
             if (!user || !user.id) {
                 lockedGate.style.display = 'flex';
-                showDebug("No active Telegram Session detected. Launch this App directly inside Telegram.");
+                lockedDescText.textContent = "Please launch this Application inside your Telegram Bot session to verify membership.";
+                showDebug("No active Telegram User Session detected. Ensure WebApp wrapper is fully loaded.");
                 return;
             }
+
+            showDebug(`Connecting to verification server... (User ID detected: ${user.id})`);
 
             try {
                 const res = await fetch(`${WORKER_BACKEND}/api/check-subscription?user_id=${user.id}`);
@@ -1104,7 +1113,8 @@
                 if (!res.ok) {
                     const errData = await res.text();
                     lockedGate.style.display = 'flex';
-                    showDebug(`Worker Error Response (${res.status}): ${errData}`);
+                    lockedDescText.textContent = "Authentication server rejected the transaction.";
+                    showDebug(`Server Connection Error (${res.status}): ${errData}`);
                     return;
                 }
 
@@ -1117,18 +1127,26 @@
                         initApp();
                     } else {
                         lockedGate.style.display = 'flex';
-                        showDebug(`Verification Fail. Status in channel: "${data.status || 'Not a member'}"`);
+                        lockedDescText.textContent = "Please join our Private Telegram Channel using the button below, then tap Verify.";
+                        showDebug(`Subscription Check: User is not present in target database (Status: "${data.status || 'Left'}").`);
                     }
                 } else {
                     lockedGate.style.display = 'flex';
-                    showDebug(`Telegram API Error: ${data.error || 'Request rejected.'}`);
+                    lockedDescText.textContent = "Could not check membership details.";
+                    showDebug(`Telegram API returned error: "${data.error || 'Chat not found. Make sure the Bot is an Administrator in the Channel.'}"`);
                 }
             } catch (err) {
                 console.error("Verification connection error:", err);
                 lockedGate.style.display = 'flex';
-                showDebug(`Network Request Blocked. Ensure backend CORS configuration is deployed correctly. Details: ${err.message}`);
+                lockedDescText.textContent = "Connection to authentication node failed.";
+                showDebug(`Network Error: ${err.message}. Please verify the Backend URL is online and CORS is enabled.`);
             }
         }
+
+        // Initialize App triggers on DOM load to guarantee SDK read-write availability
+        window.addEventListener('DOMContentLoaded', () => {
+            runGateVerification();
+        });
 
         verifySubBtn.addEventListener('click', async () => {
             verifySubBtn.disabled = true;
