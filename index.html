@@ -183,7 +183,7 @@
             100% { transform: translateY(-4px); }
         }
         
-        /* 2-Column 16:9 Landscape Video Layout Grid */
+        /* 2-Column Grid */
         .post-grid {
             display: grid;
             grid-template-columns: repeat(2, 1fr);
@@ -224,25 +224,22 @@
             transform: scale(1.05);
         }
         
-        .watch-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.5);
+        /* New Watch Button Container Positioned Under Poster */
+        .card-footer {
+            padding: 8px;
+            background: rgba(0, 0, 0, 0.3);
+            border-top: 1px solid rgba(255, 255, 255, 0.03);
             display: flex;
             justify-content: center;
-            align-items: center;
-            opacity: 1;
         }
         
         .watch-btn {
             background: var(--gradient);
             color: white;
             border: none;
-            padding: 8px 14px;
-            border-radius: 20px;
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
             font-size: 11px;
             font-weight: 700;
             cursor: pointer;
@@ -251,6 +248,11 @@
             justify-content: center;
             gap: 6px;
             box-shadow: var(--shadow);
+            transition: opacity 0.2s;
+        }
+
+        .watch-btn:active {
+            opacity: 0.9;
         }
         
         /* Locked channel subscription gate interface */
@@ -262,7 +264,7 @@
             bottom: 0;
             background: #07070A;
             z-index: 500;
-            display: flex; /* Starts flex to prevent blank screens during verification */
+            display: none;
             flex-direction: column;
             align-items: center;
             justify-content: center;
@@ -356,6 +358,7 @@
             text-align: left;
             word-break: break-all;
             border: 1px solid rgba(255, 152, 0, 0.2);
+            display: none;
         }
 
         .pagination {
@@ -876,7 +879,7 @@
         }
 
         .welcome-title {
-            font-size: 26px;
+            font-size: 22px;
             margin-bottom: 16px;
             background: var(--gradient);
             -webkit-background-clip: text;
@@ -892,16 +895,45 @@
             max-width: 280px;
         }
 
+        .welcome-btn-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            width: 100%;
+            max-width: 240px;
+        }
+
         .welcome-btn {
             background: var(--gradient);
             color: white;
             border: none;
-            padding: 16px 48px;
+            padding: 16px 36px;
             border-radius: 35px;
             font-weight: 700;
-            font-size: 15px;
+            font-size: 14px;
             cursor: pointer;
             box-shadow: var(--shadow);
+            transition: transform 0.2s;
+        }
+
+        .welcome-btn:active {
+            transform: scale(0.97);
+        }
+
+        .welcome-exit-btn {
+            background: rgba(255,255,255,0.05);
+            color: var(--text-muted);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 12px 36px;
+            border-radius: 35px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .welcome-exit-btn:active {
+            background: rgba(255,255,255,0.1);
         }
         
         .video-container.hide-controls .player-header,
@@ -963,7 +995,6 @@
                 Checking channel subscription status. Please wait...
             </div>
             <div class="locked-btn-group">
-                <!-- Replace with your actual private channel invite link -->
                 <a href="https://t.me/+rqd9cT75YJJkNGY1" class="locked-primary-btn" id="join-channel-anchor" target="_blank">
                     <i class="fab fa-telegram-plane"></i> Join Channel
                 </a>
@@ -971,7 +1002,6 @@
                     <i class="fas fa-redo"></i> Verify Membership
                 </button>
             </div>
-            <!-- Live technical console log for diagnostic assistance -->
             <div class="debug-console" id="debug-console">Initialising system...</div>
         </div>
 
@@ -1039,7 +1069,7 @@
     <script>
         const tg = window.Telegram.WebApp;
         
-        const WORKER_BACKEND = "https://lovehousexw.sumaiyaakter119955.workers.dev"; // Live Backend Worker URL
+        const WORKER_BACKEND = "https://lovehousexw.sumaiyaakter119955.workers.dev"; // Updated Backend Worker URL
 
         let currentPage = 1;
         let currentView = 'home';
@@ -1088,13 +1118,27 @@
             debugConsole.innerHTML = `⚙️ <strong>System Status:</strong><br>${msg}`;
         }
 
+        // Main check for subscription status
         async function runGateVerification() {
-            // Signal Telegram SDK setup
             try {
                 tg.ready();
                 tg.expand();
             } catch(e) {
-                console.log("Telegram expansion bypassed.");
+                console.log("Telegram SDK initiated.");
+            }
+
+            // Check Cache-First subscription state
+            const isCachedVerified = localStorage.getItem('gateVerified') === 'true';
+            
+            if (isCachedVerified) {
+                // If previously verified, immediately close gate and render app content
+                isVerifiedUser = true;
+                lockedGate.style.display = 'none';
+                initApp();
+                
+                // Silently verify subscription status in the background
+                runSilentBackgroundVerification();
+                return;
             }
 
             const user = tg.initDataUnsafe?.user;
@@ -1123,27 +1167,48 @@
                 if (data.ok) {
                     if (data.subscribed) {
                         isVerifiedUser = true;
+                        localStorage.setItem('gateVerified', 'true'); // Cache result
                         lockedGate.style.display = 'none';
                         initApp();
                     } else {
                         lockedGate.style.display = 'flex';
                         lockedDescText.textContent = "Please join our Private Telegram Channel using the button below, then tap Verify.";
-                        showDebug(`Subscription Check: User is not present in target database (Status: "${data.status || 'Left'}").`);
+                        showDebug(`Subscription Check: User is not present in target database.`);
                     }
                 } else {
                     lockedGate.style.display = 'flex';
                     lockedDescText.textContent = "Could not check membership details.";
-                    showDebug(`Telegram API returned error: "${data.error || 'Chat not found. Make sure the Bot is an Administrator in the Channel.'}"`);
+                    showDebug(`Telegram API returned error: "${data.error || 'Chat not found. Make sure the Bot is an Administrator.'}"`);
                 }
             } catch (err) {
                 console.error("Verification connection error:", err);
                 lockedGate.style.display = 'flex';
                 lockedDescText.textContent = "Connection to authentication node failed.";
-                showDebug(`Network Error: ${err.message}. Please verify the Backend URL is online and CORS is enabled.`);
+                showDebug(`Network Error: ${err.message}. Please verify the Backend URL is online.`);
             }
         }
 
-        // Initialize App triggers on DOM load to guarantee SDK read-write availability
+        // Silent background sync
+        async function runSilentBackgroundVerification() {
+            const user = tg.initDataUnsafe?.user;
+            if (!user || !user.id) return;
+            
+            try {
+                const res = await fetch(`${WORKER_BACKEND}/api/check-subscription?user_id=${user.id}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.ok && !data.subscribed) {
+                        // User has left the channel, revoke cache immediately
+                        localStorage.removeItem('gateVerified');
+                        isVerifiedUser = false;
+                        location.reload(); // Reload to trigger subscription gate
+                    }
+                }
+            } catch (e) {
+                console.log("Silent verification sync omitted.");
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             runGateVerification();
         });
@@ -1157,9 +1222,9 @@
         });
 
         function initApp() {
-            if (!localStorage.getItem('welcomeShown')) {
-                showWelcomeMessage();
-                localStorage.setItem('welcomeShown', 'true');
+            // Check Age Verification
+            if (!localStorage.getItem('ageVerified')) {
+                showAgeVerificationScreen();
             } else {
                 loadHomePage();
             }
@@ -1294,17 +1359,30 @@
             `;
         }
         
-        function showWelcomeMessage() {
+        // Strict Age Verification Screen (Replaces welcomeShown launch app layout)
+        function showAgeVerificationScreen() {
             appContainer.innerHTML = `
                 <div class="welcome-container">
-                    <div class="welcome-icon">🎬</div>
-                    <h1 class="welcome-title">Love House X</h1>
+                    <div class="welcome-icon">🔞</div>
+                    <h1 class="welcome-title">Age Verification</h1>
                     <p class="welcome-desc">
-                        Enjoy curated high-definition video feeds formatted perfectly for horizontal landscape media streams.
+                        You must be 18 years of age or older to enter Love House X. Please confirm your age to proceed.
                     </p>
-                    <button class="welcome-btn" onclick="loadHomePage()">Launch App</button>
+                    <div class="welcome-btn-group">
+                        <button class="welcome-btn" onclick="verifyAgeRequirement()">Yes, I am 18+</button>
+                        <button class="welcome-exit-btn" onclick="denyAgeRequirement()">No, Exit</button>
+                    </div>
                 </div>
             `;
+        }
+
+        function verifyAgeRequirement() {
+            localStorage.setItem('ageVerified', 'true');
+            loadHomePage();
+        }
+
+        function denyAgeRequirement() {
+            tg.close(); // Closes the Telegram WebApp instantly
         }
         
         function showRules() {
@@ -1325,7 +1403,6 @@
 
                     <div class="tutorial-container">
                         <div class="tutorial-title">Confused on how to load videos?</div>
-                        <!-- Replace with your actual private channel invite link -->
                         <a href="https://t.me/+rqd9cT75YJJkNGY1" class="tutorial-btn" target="_blank">
                             <i class="fas fa-video"></i> Watch Video Tutorial
                         </a>
@@ -1341,7 +1418,7 @@
         
         function loadHomePage() {
             const availablePosts = posts.filter(post => !watchedVideos[post.id]);
-            const postsPerPage = 10;
+            const postsPerPage = 20; // Updated limit to 20 posts per page
             const totalPages = Math.ceil(availablePosts.length / postsPerPage) || 1;
             
             if (currentPage > totalPages) currentPage = totalPages;
@@ -1381,11 +1458,11 @@
                         <div class="post-card">
                             <div class="thumbnail-container">
                                 <img src="${post.thumbnail}" class="post-thumbnail" alt="Video Thumbnail">
-                                <div class="watch-overlay">
-                                    <button class="watch-btn" onclick="triggerWatchFlow('${post.id}', 2)">
-                                        <i class="fas fa-play"></i> Watch
-                                    </button>
-                                </div>
+                            </div>
+                            <div class="card-footer">
+                                <button class="watch-btn" onclick="triggerWatchFlow('${post.id}', 2)">
+                                    <i class="fas fa-play"></i> Watch Now
+                                </button>
                             </div>
                         </div>
                     `;
@@ -1555,6 +1632,8 @@
         window.triggerWatchFlow = triggerWatchFlow;
         window.changePage = changePage;
         window.loadHomePage = loadHomePage;
+        window.verifyAgeRequirement = verifyAgeRequirement;
+        window.denyAgeRequirement = denyAgeRequirement;
     </script>
 </body>
 </html>
